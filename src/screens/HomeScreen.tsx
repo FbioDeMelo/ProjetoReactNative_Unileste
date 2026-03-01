@@ -1,64 +1,112 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, FlatList, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Orcamento, StatusOrcamento } from '../types';
 import { colors, spacing, borderRadius } from '../theme';
 import { OrcamentoCard } from '../components/list/OrcamentoCard';
 import { Button } from '../components/ui/Button';
-
-const dadosExemplo: Orcamento[] = [
-  {
-    id: '1',
-    cliente: 'Loja de Móveis XYZ',
-    titulo: 'Projeto Sala de Estar',
-    status: 'Rascunho',
-    dataCriacao: new Date().toISOString(),
-    dataAtualizacao: new Date().toISOString(),
-    itens: [
-      { id: 'i1', descricao: 'Sofá', quantidade: 1, precoUnitario: 2500 },
-      { id: 'i2', descricao: 'Mesa de Centro', quantidade: 1, precoUnitario: 800 }
-    ],
-  },
-  {
-    id: '2',
-    cliente: 'Consultoria Tech',
-    titulo: 'Manutenção PCs',
-    status: 'Aprovado',
-    dataCriacao: new Date().toISOString(),
-    dataAtualizacao: new Date().toISOString(),
-    itens: [
-      { id: 'i3', descricao: 'Formatação', quantidade: 5, precoUnitario: 150 },
-      { id: 'i4', descricao: 'Troca HD', quantidade: 2, precoUnitario: 300 }
-    ],
-  },
-  {
-    id: '3',
-    cliente: 'Maria Silva',
-    titulo: 'Cadeiras Escritório',
-    status: 'Enviado',
-    dataCriacao: new Date().toISOString(),
-    dataAtualizacao: new Date().toISOString(),
-    itens: [
-      { id: 'i5', descricao: 'Cadeira Ergonomica', quantidade: 4, precoUnitario: 600 }
-    ],
-  },
-];
+import { useNavigation, useFocusEffect } from '@react-navigation/native'; 
+import { getOrcamentos, saveOrcamentos } from '../storage/orcamentoStorage';
 
 export const HomeScreen = () => {
+  const navigation = useNavigation<any>();
+  const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [filter, setFilter] = useState<StatusOrcamento | 'Todos'>('Todos');
   const [searchText, setSearchText] = useState('');
 
- 
-  const filteredData = dadosExemplo.filter(item => {
+  const loadOrcamentos = async () => {
+    try {
+      const data = await getOrcamentos();
+      setOrcamentos(data);
+    } catch (error) {
+      console.error("Erro ao carregar orçamentos", error);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadOrcamentos();
+    }, [])
+  );
+
+  const handleStatusChange = async (id: string, novoStatus: StatusOrcamento) => {
+    try {
+      const listaAtualizada = orcamentos.map(item => {
+        if (item.id === id) {
+          return { ...item, status: novoStatus, dataAtualizacao: new Date().toISOString() };
+        }
+        return item;
+      });
+
+      await saveOrcamentos(listaAtualizada);
+      setOrcamentos(listaAtualizada);
+      Alert.alert("Sucesso", `Orçamento marcado como ${novoStatus}`);
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível atualizar o status.");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    Alert.alert(
+      "Excluir Orçamento",
+      "Tem certeza que deseja apagar este orçamento?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: async () => {
+            const novaLista = orcamentos.filter(item => item.id !== id);
+            setOrcamentos(novaLista);
+            await saveOrcamentos(novaLista);
+          }
+        }
+      ]
+    );
+  };
+
+  const filteredData = orcamentos.filter(item => {
     const matchesStatus = filter === 'Todos' || item.status === filter;
     const matchesSearch = item.titulo.toLowerCase().includes(searchText.toLowerCase()) || 
                           item.cliente.toLowerCase().includes(searchText.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
-  const draftCount = dadosExemplo.filter(i => i.status === 'Rascunho').length;
+  const draftCount = orcamentos.filter(i => i.status === 'Rascunho').length;
 
   const renderOrcamento = ({ item }: { item: Orcamento }) => (
-    <TouchableOpacity onPress={() => console.log('Navegar para detalhes', item.id)}>
+    <TouchableOpacity 
+      activeOpacity={0.7}
+      onPress={() => {
+        // VERIFICAÇÃO: Só permite mudar status se for Rascunho
+        if (item.status === 'Rascunho') {
+          Alert.alert(
+            `Orçamento: ${item.titulo}`,
+            `Cliente: ${item.cliente}\nTotal: ${item.itens.reduce((a,b)=>a+(b.quantidade*b.precoUnitario),0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}`,
+            [
+              { text: "Cancelar", style: "cancel" },
+              {
+                text: "Recusar",
+                style: "destructive",
+                onPress: () => handleStatusChange(item.id, 'Recusado')
+              },
+              {
+                text: "Aprovar",
+                onPress: () => handleStatusChange(item.id, 'Aprovado')
+              }
+            ],
+            { cancelable: true }
+          );
+        } else {
+          // CASO CONTRÁRIO: Apenas mostra detalhes e bloqueia a ação
+          Alert.alert(
+            "Orçamento Finalizado",
+            `Status: ${item.status}\nCliente: ${item.cliente}\nTotal: ${item.itens.reduce((a,b)=>a+(b.quantidade*b.precoUnitario),0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}\n\nEste orçamento já foi finalizado e não pode ter o status alterado.`,
+            [{ text: "OK", style: "default" }]
+          );
+        }
+      }}
+      onLongPress={() => handleDelete(item.id)} 
+    >
       <OrcamentoCard orcamento={item} onPress={() => {}} />
     </TouchableOpacity>
   );
@@ -69,7 +117,7 @@ export const HomeScreen = () => {
       {/* Cabeçalho Principal */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Orçamentos</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Form')}>
            <Text style={styles.novoBtnText}>+ Novo</Text>
         </TouchableOpacity>
       </View>
@@ -120,7 +168,7 @@ export const HomeScreen = () => {
         ))}
       </ScrollView>
 
-      {}
+      {/* Lista */}
       <FlatList
         data={filteredData}
         keyExtractor={(item) => item.id}
@@ -128,13 +176,21 @@ export const HomeScreen = () => {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>Nenhum orçamento encontrado.</Text>
+          <View style={{paddingTop: 50}}>
+             <Text style={styles.emptyText}>Nenhum orçamento encontrado.</Text>
+             <Text style={styles.emptySubText}>Vá em "+ Novo" para criar o primeiro!</Text>
+          </View>
         }
+        refreshing={false}
+        onRefresh={loadOrcamentos}
       />
 
-      {}
+      {/* Botão Flutuante */}
       <View style={styles.fabContainer}>
-        <Button title="+ Novo Orçamento" onPress={() => console.log('Criar novo')} />
+        <Button 
+          title="+ Novo Orçamento" 
+          onPress={() => navigation.navigate('Form')} 
+        />
       </View>
     </View>
   );
@@ -223,11 +279,19 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.md,
     paddingBottom: 100, 
+    flexGrow: 1,
   },
   emptyText: {
     textAlign: 'center',
     color: colors.textLight,
+    fontSize: 16,
     marginTop: spacing.xl,
+  },
+  emptySubText: {
+    textAlign: 'center',
+    color: colors.textLight,
+    fontSize: 14,
+    marginTop: 5,
   },
   fabContainer: {
     position: 'absolute',
