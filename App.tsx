@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { FormScreen } from './src/screens/FormScreen';
 
+// Criando o navegador do tipo "Pilha" (Stack)
 const Stack = createNativeStackNavigator();
 
 export default function App() {
@@ -15,7 +16,7 @@ export default function App() {
         <Stack.Screen 
           name="Home" 
           component={HomeScreen} 
-          options={{ headerShown: false }} 
+          options={{ headerShown: false }} // Esconde a barra de título padrão, pois fizemos a nossa
         />
 
         {/* TELA 2: FORM (Criação) */}
